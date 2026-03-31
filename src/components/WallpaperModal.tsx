@@ -1,14 +1,17 @@
 import React, { useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Smartphone, Lock, Loader2, CheckCircle2, Palette, Leaf, Sparkles, Crown, Type as TypeIcon, RefreshCw, AlignLeft, AlignCenter, AlignRight, ChevronUp, ChevronDown, Eye, Copy, Share2 } from 'lucide-react';
+import { X, Smartphone, Lock, Loader2, CheckCircle2, Palette, Leaf, Compass as SoulIcon, Crown, Type as TypeIcon, RefreshCw, AlignLeft, AlignCenter, AlignRight, ChevronUp, ChevronDown, Eye, Copy, Share2, Sparkles } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { Quote, Language } from '../types';
 import { UI_TRANSLATIONS } from '../constants';
+import { generateBackgroundImage } from '../services/gemini';
 
 interface WallpaperModalProps {
   quote: Quote;
   language: Language;
   onClose: () => void;
+  isPremium: boolean;
+  onUpgrade: () => void;
 }
 
 type WallpaperStyle = 'minimal' | 'nature' | 'abstract' | 'warm' | 'calm' | 'dark' | 'luxury' | 'creative';
@@ -40,6 +43,7 @@ interface StyleConfig {
   authorClass: string;
   imageUrl?: string;
   patternSvg?: string;
+  isPremium?: boolean;
 }
 
 const STYLES: StyleConfig[] = [
@@ -98,7 +102,8 @@ const STYLES: StyleConfig[] = [
     bgClass: 'bg-[#050505]',
     overlayClass: 'bg-[radial-gradient(circle_at_center,_var(--tw-gradient-from)_0%,_transparent_100%)] from-amber-500/20',
     textClass: 'text-amber-100/90 italic drop-shadow-[0_4px_20px_rgba(251,191,36,0.3)] text-3xl font-serif',
-    authorClass: 'text-amber-500/40 font-black tracking-[0.6em] uppercase text-[8px]'
+    authorClass: 'text-amber-500/40 font-black tracking-[0.6em] uppercase text-[8px]',
+    isPremium: true
   },
   {
     id: 'creative',
@@ -106,7 +111,8 @@ const STYLES: StyleConfig[] = [
     icon: RefreshCw,
     bgClass: 'bg-gradient-to-br from-orange-500 via-pink-500 to-rose-500',
     textClass: 'text-white text-4xl font-black tracking-tighter drop-shadow-2xl',
-    authorClass: 'text-white/40 font-black uppercase tracking-widest text-[10px]'
+    authorClass: 'text-white/40 font-black uppercase tracking-widest text-[10px]',
+    isPremium: true
   }
 ];
 
@@ -127,16 +133,19 @@ const colorVariations = [
   'from-amber-950 via-orange-950 to-[#050505]',
 ];
 
-export default function WallpaperModal({ quote, language, onClose }: WallpaperModalProps) {
+export default function WallpaperModal({ quote, language, onClose, isPremium, onUpgrade }: WallpaperModalProps) {
   const wallpaperRef = useRef<HTMLDivElement>(null);
   const [selectedStyle, setSelectedStyle] = useState<WallpaperStyle>('minimal');
   const [selectedFont, setSelectedFont] = useState(FONTS[0].id);
   const [selectedColor, setSelectedColor] = useState(colorVariations[0]);
   const [selectedImage, setSelectedImage] = useState(natureImages[0]);
+  const [customImages, setCustomImages] = useState<string[]>([]);
   const [previewMode, setPreviewMode] = useState<PreviewMode>('raw');
   const [textAlignment, setTextAlignment] = useState<TextAlignment>('center');
   const [textPosition, setTextPosition] = useState<TextPosition>('center');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+  const [currentGeneratingStyle, setCurrentGeneratingStyle] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showCopyToast, setShowCopyToast] = useState(false);
 
@@ -152,10 +161,18 @@ export default function WallpaperModal({ quote, language, onClose }: WallpaperMo
     const originalPadding = wallpaperRef.current.style.padding;
     
     try {
-      // Adjust padding to simulate cropping/optimal layout for Home vs Lock screen
-      // Home screen: More padding to avoid icon obstruction
+      // Adjust padding and position to simulate cropping/optimal layout for Home vs Lock screen
+      // Home screen: More padding at bottom to avoid icon obstruction
       // Lock screen: More padding at top for clock
-      wallpaperRef.current.style.padding = type === 'home' ? '80px 40px' : '120px 40px';
+      const originalJustify = wallpaperRef.current.style.justifyContent;
+      
+      if (type === 'home') {
+        wallpaperRef.current.style.padding = '80px 40px 160px 40px';
+        // For home screen, center or top is usually better
+      } else {
+        wallpaperRef.current.style.padding = '240px 40px 80px 40px';
+        // For lock screen, bottom or center is usually better to avoid clock
+      }
 
       // Ensure images are loaded before capturing
       const images = Array.from(wallpaperRef.current.getElementsByTagName('img')) as HTMLImageElement[];
@@ -231,6 +248,28 @@ export default function WallpaperModal({ quote, language, onClose }: WallpaperMo
     navigator.clipboard.writeText(quote.text);
     setShowCopyToast(true);
     setTimeout(() => setShowCopyToast(false), 2000);
+  };
+
+  const handleGenerateAIBackground = async (style: string) => {
+    if (!isPremium) {
+      onUpgrade();
+      return;
+    }
+    setIsGeneratingAI(true);
+    setCurrentGeneratingStyle(style);
+    try {
+      const imageUrl = await generateBackgroundImage(quote.text, style);
+      if (imageUrl) {
+        setCustomImages(prev => [imageUrl, ...prev]);
+        setSelectedImage(imageUrl);
+        setSelectedStyle('nature'); // Switch to nature style to display the image
+      }
+    } catch (error) {
+      console.error("Failed to generate AI background", error);
+    } finally {
+      setIsGeneratingAI(false);
+      setCurrentGeneratingStyle(null);
+    }
   };
 
   return (
@@ -418,11 +457,18 @@ export default function WallpaperModal({ quote, language, onClose }: WallpaperMo
             <div className="flex gap-3 overflow-x-auto pb-4 no-scrollbar">
               {STYLES.map((style) => {
                 const Icon = style.icon;
+                const isLocked = style.isPremium && !isPremium;
                 return (
                   <button
                     key={style.id}
-                    onClick={() => setSelectedStyle(style.id)}
-                    className={`flex-shrink-0 flex items-center gap-3 px-6 py-4 rounded-2xl border transition-all active:scale-95 ${
+                    onClick={() => {
+                      if (isLocked) {
+                        onUpgrade();
+                      } else {
+                        setSelectedStyle(style.id);
+                      }
+                    }}
+                    className={`flex-shrink-0 flex items-center gap-3 px-6 py-4 rounded-2xl border transition-all active:scale-95 relative ${
                       selectedStyle === style.id 
                         ? 'bg-orange-500 border-orange-400 text-white shadow-[0_10px_30px_rgba(249,115,22,0.3)]' 
                         : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10'
@@ -430,6 +476,50 @@ export default function WallpaperModal({ quote, language, onClose }: WallpaperMo
                   >
                     <Icon className="w-4 h-4" />
                     <span className="text-xs font-black uppercase tracking-[0.2em]">{t(style.name)}</span>
+                    {isLocked && (
+                      <div className="absolute -top-2 -right-2 w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center shadow-lg border-2 border-[#111]">
+                        <Lock className="w-3 h-3 text-white" />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* AI Background Generator */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 text-white/20">
+              <Sparkles className="w-4 h-4" />
+              <span className="text-[10px] font-black uppercase tracking-[0.3em]">{t('aiBackground') || 'AI Background'}</span>
+            </div>
+            <div className="flex gap-3 overflow-x-auto pb-4 no-scrollbar">
+              {(['abstract', 'serene', 'vibrant'] as const).map((aiStyle) => {
+                const isLocked = !isPremium;
+                return (
+                  <button
+                    key={aiStyle}
+                    onClick={() => handleGenerateAIBackground(aiStyle)}
+                    disabled={isGeneratingAI}
+                    className={`flex-shrink-0 flex items-center gap-3 px-6 py-4 rounded-2xl border transition-all active:scale-95 relative ${
+                      isGeneratingAI && currentGeneratingStyle === aiStyle
+                        ? 'bg-orange-500/20 border-orange-500/50 text-orange-400'
+                        : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10'
+                    }`}
+                  >
+                    {isGeneratingAI && currentGeneratingStyle === aiStyle ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-4 h-4" />
+                    )}
+                    <span className="text-xs font-black uppercase tracking-[0.2em]">
+                      {isGeneratingAI && currentGeneratingStyle === aiStyle ? t('generating') : t(`style${aiStyle.charAt(0).toUpperCase() + aiStyle.slice(1)}`) || aiStyle}
+                    </span>
+                    {isLocked && (
+                      <div className="absolute -top-2 -right-2 w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center shadow-lg border-2 border-[#111]">
+                        <Lock className="w-3 h-3 text-white" />
+                      </div>
+                    )}
                   </button>
                 );
               })}
@@ -466,7 +556,7 @@ export default function WallpaperModal({ quote, language, onClose }: WallpaperMo
                 exit={{ opacity: 0, y: -10 }}
                 className="flex justify-center gap-4 overflow-x-auto pb-4 no-scrollbar"
               >
-                {natureImages.map((img, idx) => (
+                {[...customImages, ...natureImages].map((img, idx) => (
                   <button
                     key={idx}
                     onClick={() => setSelectedImage(img)}
@@ -487,7 +577,7 @@ export default function WallpaperModal({ quote, language, onClose }: WallpaperMo
           <button
             onClick={handleShare}
             disabled={isGenerating}
-            className="flex items-center justify-center gap-4 py-6 bg-orange-500 border border-orange-400 rounded-[2rem] hover:bg-orange-600 transition-all group active:scale-95 disabled:opacity-30"
+            className="flex items-center justify-center gap-4 py-6 bg-orange-500 backdrop-blur-xl border border-orange-400 rounded-[2rem] hover:bg-orange-600 transition-all group active:scale-95 disabled:opacity-30 shadow-lg"
           >
             <Share2 className="w-5 h-5 text-white" />
             <span className="text-xs font-black uppercase tracking-[0.3em] text-white">{t('shareImage')}</span>
@@ -495,7 +585,7 @@ export default function WallpaperModal({ quote, language, onClose }: WallpaperMo
           
           <button
             onClick={copyToClipboard}
-            className="flex items-center justify-center gap-4 py-6 bg-white/5 border border-white/10 rounded-[2rem] hover:bg-white/10 transition-all group active:scale-95"
+            className="flex items-center justify-center gap-4 py-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-[2rem] hover:bg-white/10 transition-all group active:scale-95 shadow-lg"
           >
             <Copy className="w-5 h-5 text-orange-500" />
             <span className="text-xs font-black uppercase tracking-[0.3em] text-white/60 group-hover:text-white">{t('copyText')}</span>
@@ -506,7 +596,7 @@ export default function WallpaperModal({ quote, language, onClose }: WallpaperMo
           <button
             onClick={() => handleDownload('home')}
             disabled={isGenerating}
-            className="flex flex-col items-center justify-center gap-4 p-8 bg-white/5 border border-white/10 rounded-[2.5rem] hover:bg-white/10 transition-all group disabled:opacity-30 active:scale-95"
+            className="flex flex-col items-center justify-center gap-4 p-8 bg-white/5 backdrop-blur-xl border border-white/10 rounded-[2.5rem] hover:bg-white/10 transition-all group disabled:opacity-30 active:scale-95 shadow-lg"
           >
             <Smartphone className="w-6 h-6 text-orange-500" />
             <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40 group-hover:text-white">{t('homeScreen')}</span>
@@ -515,7 +605,7 @@ export default function WallpaperModal({ quote, language, onClose }: WallpaperMo
           <button
             onClick={() => handleDownload('lock')}
             disabled={isGenerating}
-            className="flex flex-col items-center justify-center gap-4 p-8 bg-white/5 border border-white/10 rounded-[2.5rem] hover:bg-white/10 transition-all group disabled:opacity-30 active:scale-95"
+            className="flex flex-col items-center justify-center gap-4 p-8 bg-white/5 backdrop-blur-xl border border-white/10 rounded-[2.5rem] hover:bg-white/10 transition-all group disabled:opacity-30 active:scale-95 shadow-lg"
           >
             <Lock className="w-6 h-6 text-orange-500" />
             <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40 group-hover:text-white">{t('lockScreen')}</span>

@@ -14,7 +14,7 @@ export async function generateQuotes(category: string, language: Language, count
   3. Variety: Ensure each quote explores a different nuance of "${category}". Do not repeat common internet quotes; create something fresh and original.
   4. Language: Use natural, contemporary ${language} that resonates with the soul.
   
-  Return the result as a JSON array of objects with "text" and "author" fields. If the quote is original, use "EthioQuotes AI" as the author.`;
+  Return the result as a JSON array of objects with "text" and "author" fields. If the quote is original, use "SoulSync Wisdom" as the author.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -50,37 +50,41 @@ export async function generateQuotes(category: string, language: Language, count
   }
 }
 
-export async function analyzeMood(userInput: string, language: Language, includeReligious: boolean = false): Promise<MoodAnalysis | null> {
+export async function analyzeMood(history: { role: 'user' | 'model', parts: { text: string }[] }[], language: Language): Promise<MoodAnalysis | null> {
   const model = "gemini-3-flash-preview";
   
-  const prompt = `You are a deeply empathetic and caring close friend listening to a loved one. Analyze the following user input and detect the primary emotion (e.g., sadness, stress, loneliness, love, confusion, discouragement, fear).
-  
-  User Input: "${userInput}"
-  
+  const prompt = `You are a deeply empathetic, caring close friend and spiritual guide listening to a loved one. Analyze the following conversation history.
+
   Requirements:
-  1. Detect the emotion accurately in the ${language} language.
-  2. Write 1 short, warm, and highly personal supportive message (max 2 sentences) in ${language} that speaks directly to the user's heart.
-  3. Generate exactly 4 personalized, supportive, and caring quotes in ${language} that address this specific emotion.
-  4. Tone: Warm, intimate, and human. Avoid generic or robotic advice. Speak as if you are sitting right next to them.
-  ${includeReligious ? `5. Since the user has enabled religious wisdom, if the detected emotion is one that could benefit from spiritual comfort (like sadness, stress, fear, or discouragement), include 2 relevant, comforting, and hopeful verses from the Bible or the Quran in ${language}. Ensure they are respectful and accurately reflect the scripture.` : ''}
+  1. If the user's input is brief, vague, or you don't fully understand what happened (e.g., "I feel sad", "bad day"), ask gentle, caring follow-up questions in ${language} to understand WHAT happened and WHY they feel this way. Set "needsMoreInfo" to true. DO NOT generate quotes yet.
+  2. If the user has shared enough detail for you to truly understand their situation, provide deep comfort, care for them, and make them feel better. Set "needsMoreInfo" to false.
+  3. If "needsMoreInfo" is false, detect the primary emotion accurately in ${language}.
+  4. If "needsMoreInfo" is false, write 1 short, warm, and highly personal supportive message (max 2-3 sentences) in ${language} that speaks directly to their heart.
+  5. If "needsMoreInfo" is false, generate exactly 4 personalized, supportive, and caring quotes in ${language} that address their specific situation. Use "Inner Voice" as the author.
+  6. ONLY if the user explicitly mentions religion, God, faith, praying, or asks for spiritual/religious quotes, include 1 or 2 relevant, comforting verses from the Bible or Quran in ${language}. Otherwise, omit religious quotes.
+  7. Tone: Warm, intimate, and human. Avoid generic or robotic advice. Speak as if you are sitting right next to them.
   
   Return the result as a JSON object with:
-  - "emotion": string (the detected emotion in ${language})
-  - "supportiveMessage": string (your personal message in ${language})
-  - "quotes": array of objects with "text" and "author" fields (in ${language})
-  ${includeReligious ? '- "religiousQuotes": array of objects with "text" and "author" fields (e.g., "Bible - Psalm 23:1" or "Quran - 2:286")' : ''}
-  
-  Use "Your AI Friend" as the author for the general quotes.`;
+  - "needsMoreInfo": boolean
+  - "supportiveMessage": string (your personal message or follow-up question in ${language})
+  - "emotion": string (optional, only if needsMoreInfo is false)
+  - "quotes": array of objects with "text" and "author" fields (optional, only if needsMoreInfo is false)
+  - "religiousQuotes": array of objects with "text" and "author" fields (optional, only if explicitly requested or relevant based on user's spiritual mention)`;
 
   try {
     const response = await ai.models.generateContent({
       model,
-      contents: prompt,
+      contents: [
+        { role: 'user', parts: [{ text: prompt }] },
+        { role: 'model', parts: [{ text: 'Understood. I will respond in JSON format as requested.' }] },
+        ...history
+      ],
       config: {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
+            needsMoreInfo: { type: Type.BOOLEAN },
             emotion: { type: Type.STRING },
             supportiveMessage: { type: Type.STRING },
             quotes: {
@@ -106,19 +110,20 @@ export async function analyzeMood(userInput: string, language: Language, include
               },
             },
           },
-          required: ["emotion", "supportiveMessage", "quotes"],
+          required: ["needsMoreInfo", "supportiveMessage"],
         },
       },
     });
 
     const data = JSON.parse(response.text || "{}");
     return {
+      needsMoreInfo: data.needsMoreInfo,
       emotion: data.emotion,
       supportiveMessage: data.supportiveMessage,
-      quotes: data.quotes.map((item: any, index: number) => ({
+      quotes: data.quotes?.map((item: any, index: number) => ({
         id: `mood-${language}-${Date.now()}-${index}`,
         text: item.text,
-        author: item.author || "Your AI Friend",
+        author: item.author || "Inner Voice",
         category: 'mood',
         language,
       })),
@@ -144,4 +149,28 @@ export async function generateDailyQuote(language: Language): Promise<Quote | nu
     return { ...quotes[0], isDaily: true };
   }
   return null;
+}
+
+export async function generateBackgroundImage(quoteText: string, style: string): Promise<string | null> {
+  try {
+    const prompt = `A beautiful, high-quality, ${style} background image without any text, inspired by the theme of this quote: "${quoteText}". The image should be suitable for a phone wallpaper.`;
+    const response = await ai.models.generateImages({
+      model: 'imagen-4.0-generate-001',
+      prompt: prompt,
+      config: {
+        numberOfImages: 1,
+        outputMimeType: 'image/jpeg',
+        aspectRatio: '9:16',
+      },
+    });
+    
+    if (response.generatedImages && response.generatedImages.length > 0) {
+      const base64EncodeString = response.generatedImages[0].image.imageBytes;
+      return `data:image/jpeg;base64,${base64EncodeString}`;
+    }
+    return null;
+  } catch (error) {
+    console.error("Error generating background image:", error);
+    return null;
+  }
 }

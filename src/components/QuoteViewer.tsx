@@ -157,7 +157,7 @@ export default function QuoteViewer({
                   initial={{ y: 20, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   transition={{ delay: 0.2 }}
-                  className="text-4xl sm:text-5xl md:text-6xl font-serif font-medium leading-tight text-white text-glow"
+                  className="text-4xl sm:text-5xl md:text-6xl font-serif font-semibold leading-snug text-white tracking-tight text-glow drop-shadow-[0_4px_16px_rgba(0,0,0,1)]"
                 >
                   "{quote.text}"
                 </motion.p>

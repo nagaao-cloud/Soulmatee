@@ -1,0 +1,125 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required) - The user's unique ID
+    //   - email: string (optional) - The user's email address
+    //   - displayName: string (optional) - The user's display name
+    //   - photoURL: string (optional) - The user's profile picture URL
+    //   - isPremium: boolean (optional) - Whether the user has a premium subscription
+    //   - notificationsEnabled: boolean (optional) - Whether the user has enabled notifications
+    //   - createdAt: timestamp (required) - When the user was created
+    //
+    // Collection: favorites
+    // Document ID: {favoriteId}
+    // Fields:
+    //   - userId: string (required) - The ID of the user who favorited the quote
+    //   - quoteId: string (required) - The ID of the favorited quote
+    //   - text: string (required) - The text of the quote
+    //   - author: string (required) - The author of the quote
+    //   - category: string (required) - The category of the quote
+    //   - createdAt: timestamp (required) - When the quote was favorited
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+    
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+    
+    function uidNotModified() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+    
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+    
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'createdAt']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 128 &&
+             data.createdAt is timestamp &&
+             (!( 'email' in data ) || isValidEmail(data.email)) &&
+             isValidOptionalString('displayName', 0, 100) &&
+             isValidOptionalString('photoURL', 0, 1000) &&
+             (!( 'isPremium' in data ) || data.isPremium is bool) &&
+             (!( 'notificationsEnabled' in data ) || data.notificationsEnabled is bool);
+    }
+
+    function isValidFavorite(data) {
+      return hasRequiredFields(['userId', 'quoteId', 'text', 'author', 'category', 'createdAt']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 128 &&
+             data.quoteId is string && data.quoteId.size() > 0 && data.quoteId.size() < 128 &&
+             data.text is string && data.text.size() > 0 && data.text.size() < 5000 &&
+             data.author is string && data.author.size() > 0 && data.author.size() < 200 &&
+             data.category is string && data.category.size() > 0 && data.category.size() < 100 &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && uidUnchanged();
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && uidNotModified() && areImmutableFieldsUnchanged(['createdAt']);
+      allow delete: if isOwner(userId);
+    }
+
+    match /favorites/{favoriteId} {
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId && isValidFavorite(request.resource.data);
+      allow update: if isAuthenticated() && request.auth.uid == resource.data.userId && request.auth.uid == request.resource.data.userId && isValidFavorite(request.resource.data) && areImmutableFieldsUnchanged(['createdAt', 'userId', 'quoteId']);
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+  }
+}
