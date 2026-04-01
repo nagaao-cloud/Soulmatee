@@ -259,8 +259,12 @@ export default function WallpaperModal({ quote, language, onClose, isPremium, on
       return;
     }
 
-    if (!(await (window as any).aistudio.hasSelectedApiKey())) {
-      await (window as any).aistudio.openSelectKey();
+    try {
+      if (!(await (window as any).aistudio?.hasSelectedApiKey?.())) {
+        await (window as any).aistudio?.openSelectKey?.();
+      }
+    } catch (e) {
+      console.warn("API key selection not available", e);
     }
 
     setIsGeneratingAI(true);
@@ -272,8 +276,15 @@ export default function WallpaperModal({ quote, language, onClose, isPremium, on
         setSelectedImage(imageUrl);
         setSelectedStyle('nature'); // Switch to nature style to display the image
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to generate AI background", error);
+      if (error?.message?.includes("Requested entity was not found")) {
+        try {
+          await (window as any).aistudio?.openSelectKey?.();
+        } catch (e) {
+          console.warn("API key selection not available", e);
+        }
+      }
     } finally {
       setIsGeneratingAI(false);
       setCurrentGeneratingStyle(null);

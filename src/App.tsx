@@ -28,6 +28,7 @@ import {
   LogOut,
   ExternalLink,
   Lightbulb,
+  MessageSquare,
 } from "lucide-react";
 import { CATEGORIES, UI_TRANSLATIONS } from "./constants";
 import { LANGUAGES, Language, Quote, Category, MoodAnalysis } from "./types";
@@ -39,6 +40,7 @@ import {
 } from "./services/gemini";
 import WallpaperModal from "./components/WallpaperModal";
 import QuoteViewer from "./components/QuoteViewer";
+import LegalModal from "./components/LegalModal";
 import { auth, db } from "./firebase";
 import {
   signInWithPopup,
@@ -83,6 +85,7 @@ export default function App() {
   );
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [favorites, setFavorites] = useState<Quote[]>([]);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [moodInput, setMoodInput] = useState("");
@@ -135,6 +138,24 @@ export default function App() {
             {generatedQuotes.map((quote, idx) => (
               <QuoteCard key={quote.id} quote={quote} idx={idx} />
             ))}
+            <button
+              onClick={async () => {
+                if (!checkGenerateLimit()) return;
+                setIdeaLoading(true);
+                const moreQuotes = await generateQuotesFromIdea(idea, currentLang);
+                setGeneratedQuotes((prev) => [...prev, ...moreQuotes]);
+                setIdeaLoading(false);
+              }}
+              disabled={ideaLoading}
+              className="w-full py-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-[2.5rem] text-white/40 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center gap-4 font-black uppercase tracking-[0.3em] text-xs group active:scale-95 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {ideaLoading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <RefreshCw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-700" />
+              )}
+              {ideaLoading ? t("generating") : t("generateMore")}
+            </button>
           </div>
         )}
       </div>
@@ -144,6 +165,8 @@ export default function App() {
     return !localStorage.getItem("onboarding_completed");
   });
   const [showPremiumModal, setShowPremiumModal] = useState(false);
+  const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
+  const [showTermsOfService, setShowTermsOfService] = useState(false);
   const [isPremium, setIsPremium] = useState(() => {
     return localStorage.getItem("is_premium") === "true";
   });
@@ -172,7 +195,9 @@ export default function App() {
     localStorage.setItem("is_premium", "true");
     setIsPremium(true);
     setShowPremiumModal(false);
+    setToastMessage("Successfully upgraded to Premium!");
     setShowToast(true);
+    setTimeout(() => setShowToast(false), 2000);
   };
 
   // Load favorites and streak from local storage
@@ -447,6 +472,20 @@ export default function App() {
     );
     setQuotes(newQuotes);
     setLoading(false);
+  };
+
+  const loadMoreQuotes = async () => {
+    if (!selectedCategory || loadingMore) return;
+    if (!checkGenerateLimit()) return;
+    triggerHaptic();
+    setLoadingMore(true);
+    const newQuotes = await generateQuotes(
+      selectedCategory.id,
+      currentLang,
+      5,
+    );
+    setQuotes((prev) => [...prev, ...newQuotes]);
+    setLoadingMore(false);
   };
 
   const handleAnalyzeMood = async () => {
@@ -974,7 +1013,20 @@ export default function App() {
                     {t("upgradeNow")} - $4.99
                   </button>
                   <button
-                    onClick={() => setShowPremiumModal(false)}
+                    onClick={() => {
+                      setToastMessage("Restoring purchases...");
+                      setShowToast(true);
+                      setTimeout(() => setShowToast(false), 2000);
+                      // Simulate restore
+                      setTimeout(() => {
+                        setIsPremium(true);
+                        localStorage.setItem("is_premium", "true");
+                        setShowPremiumModal(false);
+                        setToastMessage("Purchases restored successfully!");
+                        setShowToast(true);
+                        setTimeout(() => setShowToast(false), 2000);
+                      }, 1500);
+                    }}
                     className="w-full py-4 text-white/30 font-black uppercase tracking-[0.2em] text-[10px] hover:text-white transition-colors"
                   >
                     {t("restorePurchases")}
@@ -1297,11 +1349,16 @@ export default function App() {
                 ))}
 
                 <button
-                  onClick={fetchQuotes}
-                  className="w-full py-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-[2.5rem] text-white/40 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center gap-4 font-black uppercase tracking-[0.3em] text-xs group active:scale-95 shadow-lg"
+                  onClick={loadMoreQuotes}
+                  disabled={loadingMore}
+                  className="w-full py-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-[2.5rem] text-white/40 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center gap-4 font-black uppercase tracking-[0.3em] text-xs group active:scale-95 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <RefreshCw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-700" />
-                  {t("generateMore")}
+                  {loadingMore ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-700" />
+                  )}
+                  {loadingMore ? t("generating") : t("generateMore")}
                 </button>
               </div>
             )}
@@ -1643,7 +1700,12 @@ export default function App() {
               </div>
 
               <div className="bg-white/5 border border-white/10 rounded-[2.5rem] overflow-hidden">
-                <button className="w-full p-6 flex items-center justify-between hover:bg-white/5 transition-colors">
+                <button 
+                  onClick={() => {
+                    window.open("https://play.google.com/store/apps", "_blank");
+                  }}
+                  className="w-full p-6 flex items-center justify-between hover:bg-white/5 transition-colors"
+                >
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-green-500/10 rounded-2xl flex items-center justify-center text-green-500">
                       <Star className="w-6 h-6" />
@@ -1657,10 +1719,15 @@ export default function App() {
 
                 <div className="h-px bg-white/5 mx-6" />
 
-                <button className="w-full p-6 flex items-center justify-between hover:bg-white/5 transition-colors">
+                <button 
+                  onClick={() => {
+                    window.location.href = "mailto:nagaoda4@gmail.com?subject=FeelSync%20Feedback";
+                  }}
+                  className="w-full p-6 flex items-center justify-between hover:bg-white/5 transition-colors"
+                >
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-yellow-500/10 rounded-2xl flex items-center justify-center text-yellow-500">
-                      <Share2 className="w-6 h-6" />
+                      <MessageSquare className="w-6 h-6" />
                     </div>
                     <p className="font-bold">{t("feedback")}</p>
                   </div>
@@ -1671,7 +1738,10 @@ export default function App() {
               </div>
 
               <div className="bg-white/5 border border-white/10 rounded-[2.5rem] overflow-hidden">
-                <button className="w-full p-6 flex items-center justify-between hover:bg-white/5 transition-colors">
+                <button 
+                  onClick={() => setShowPrivacyPolicy(true)}
+                  className="w-full p-6 flex items-center justify-between hover:bg-white/5 transition-colors"
+                >
                   <p className="font-bold text-white/60">
                     {t("privacyPolicy")}
                   </p>
@@ -1680,7 +1750,10 @@ export default function App() {
                   />
                 </button>
                 <div className="h-px bg-white/5 mx-6" />
-                <button className="w-full p-6 flex items-center justify-between hover:bg-white/5 transition-colors">
+                <button 
+                  onClick={() => setShowTermsOfService(true)}
+                  className="w-full p-6 flex items-center justify-between hover:bg-white/5 transition-colors"
+                >
                   <p className="font-bold text-white/60">
                     {t("termsOfService")}
                   </p>
@@ -1704,6 +1777,20 @@ export default function App() {
       </main>
 
       <AnimatePresence>
+        {showPrivacyPolicy && (
+          <LegalModal
+            title={t("privacyPolicy")}
+            content={`Privacy Policy for FeelSync\n\nLast updated: ${new Date().toLocaleDateString()}\n\n1. Information We Collect\nWe collect information you provide directly to us, such as when you create an account, use our services, or communicate with us. This may include your name, email address, and any other information you choose to provide.\n\n2. How We Use Your Information\nWe use the information we collect to provide, maintain, and improve our services, to communicate with you, and to personalize your experience.\n\n3. Information Sharing\nWe do not share your personal information with third parties except as described in this privacy policy or with your consent.\n\n4. Security\nWe take reasonable measures to help protect your personal information from loss, theft, misuse, and unauthorized access, disclosure, alteration, and destruction.\n\n5. Contact Us\nIf you have any questions about this Privacy Policy, please contact us at nagaoda4@gmail.com.`}
+            onClose={() => setShowPrivacyPolicy(false)}
+          />
+        )}
+        {showTermsOfService && (
+          <LegalModal
+            title={t("termsOfService")}
+            content={`Terms of Service for FeelSync\n\nLast updated: ${new Date().toLocaleDateString()}\n\n1. Acceptance of Terms\nBy accessing or using our services, you agree to be bound by these Terms of Service and all applicable laws and regulations.\n\n2. Use of Services\nYou agree to use our services only for lawful purposes and in accordance with these Terms. You are responsible for all of your activity in connection with the services.\n\n3. Intellectual Property\nThe services and their original content, features, and functionality are and will remain the exclusive property of FeelSync and its licensors.\n\n4. Termination\nWe may terminate or suspend your access to our services immediately, without prior notice or liability, for any reason whatsoever, including without limitation if you breach the Terms.\n\n5. Limitation of Liability\nIn no event shall FeelSync, nor its directors, employees, partners, agents, suppliers, or affiliates, be liable for any indirect, incidental, special, consequential or punitive damages.\n\n6. Contact Us\nIf you have any questions about these Terms, please contact us at nagaoda4@gmail.com.`}
+            onClose={() => setShowTermsOfService(false)}
+          />
+        )}
         {wallpaperQuote && (
           <WallpaperModal
             quote={wallpaperQuote}

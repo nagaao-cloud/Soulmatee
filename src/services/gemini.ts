@@ -19,17 +19,32 @@ async function retryWithBackoff<T>(fn: () => Promise<T>, retries = 3, delay = 10
   }
 }
 
+const languageNames: Record<Language, string> = {
+  en: "English",
+  fr: "French",
+  ar: "Arabic",
+  am: "Amharic",
+  om: "Oromo",
+  sw: "Swahili",
+  es: "Spanish",
+  hi: "Hindi",
+  pt: "Portuguese",
+  de: "German",
+  zu: "Zulu",
+};
+
 export async function generateQuotes(category: string, language: Language, count: number = 10): Promise<Quote[]> {
   const ai = getAiInstance();
   const model = "gemini-3-flash-preview";
+  const fullLanguageName = languageNames[language] || language;
   
-  const prompt = `You are a wise, empathetic close friend. Generate ${count} unique, deep, and profoundly human quotes for the category "${category}" in the ${language} language. 
+  const prompt = `You are a wise, empathetic close friend. Generate ${count} unique, deep, and profoundly human quotes for the category "${category}" in the ${fullLanguageName} language. 
   
   Requirements:
   1. Tone: Deeply emotional, supportive, and authentic. Avoid robotic or cliché phrases.
   2. Perspective: Speak from the heart, as if sharing a quiet moment of wisdom with a dear friend.
   3. Variety: Ensure each quote explores a different nuance of "${category}". Do not repeat common internet quotes; create something fresh and original.
-  4. Language: Use natural, contemporary ${language} that resonates with the soul.
+  4. Language: Use natural, contemporary ${fullLanguageName} that resonates with the soul.
   
   Return the result as a JSON array of objects with "text" and "author" fields. If the quote is original, use "SoulSync Wisdom" as the author.`;
 
@@ -70,6 +85,7 @@ export async function generateQuotes(category: string, language: Language, count
 export async function generateQuotesFromIdea(idea: string, language: Language, count: number = 5): Promise<Quote[]> {
   const ai = getAiInstance();
   const model = "gemini-3-flash-preview";
+  const fullLanguageName = languageNames[language] || language;
 
   const prompt = `You are a wise, empathetic close friend. Generate ${count} unique, deep, and profoundly human quotes based on the following idea: "${idea}".
   
@@ -77,7 +93,7 @@ export async function generateQuotesFromIdea(idea: string, language: Language, c
   1. Tone: Deeply emotional, supportive, and authentic. Avoid robotic or cliché phrases.
   2. Perspective: Speak from the heart, as if sharing a quiet moment of wisdom with a dear friend.
   3. Variety: Ensure each quote explores a different nuance of the idea. Do not repeat common internet quotes; create something fresh and original.
-  4. Language: Use natural, contemporary ${language} that resonates with the soul.
+  4. Language: Use natural, contemporary ${fullLanguageName} that resonates with the soul.
   
   Return the result as a JSON array of objects with "text" and "author" fields. If the quote is original, use "SoulSync Wisdom" as the author.`;
 
@@ -118,24 +134,25 @@ export async function generateQuotesFromIdea(idea: string, language: Language, c
 export async function analyzeMood(history: { role: 'user' | 'model', parts: { text: string }[] }[], language: Language): Promise<MoodAnalysis | null> {
   const ai = getAiInstance();
   const model = "gemini-3-flash-preview";
+  const fullLanguageName = languageNames[language] || language;
   
   const prompt = `You are a deeply empathetic, caring close friend and spiritual guide listening to a loved one. Analyze the following conversation history.
 
   Requirements:
-  1. If the user's input is brief, vague, or you don't fully understand what happened (e.g., "I feel sad", "bad day"), ask gentle, caring follow-up questions in ${language} to understand WHAT happened and WHY they feel this way. Set "needsMoreInfo" to true. DO NOT generate quotes yet.
+  1. If the user's input is brief, vague, or you don't fully understand what happened (e.g., "I feel sad", "bad day"), ask gentle, caring follow-up questions in ${fullLanguageName} to understand WHAT happened and WHY they feel this way. Set "needsMoreInfo" to true. DO NOT generate quotes yet.
   2. If the user has shared enough detail for you to truly understand their situation, provide deep comfort, care for them, and make them feel better. Set "needsMoreInfo" to false.
-  3. If "needsMoreInfo" is false, detect the primary emotion accurately in ${language}.
-  4. If "needsMoreInfo" is false, write 1 short, warm, and highly personal supportive message (max 2-3 sentences) in ${language} that speaks directly to their heart.
-  5. If "needsMoreInfo" is false, generate exactly 4 personalized, supportive, and caring quotes in ${language} that address their specific situation. Use "Inner Voice" as the author.
+  3. If "needsMoreInfo" is false, detect the primary emotion accurately in ${fullLanguageName}.
+  4. If "needsMoreInfo" is false, write 1 short, warm, and highly personal supportive message (max 2-3 sentences) in ${fullLanguageName} that speaks directly to their heart.
+  5. If "needsMoreInfo" is false, generate exactly 4 personalized, supportive, and caring quotes in ${fullLanguageName} that address their specific situation. Use "Inner Voice" as the author.
   6. For each of the 4 quotes, also generate a translation in English, French, Arabic, Amharic, Afaan Oromo, Swahili, Spanish, Hindi, Portuguese, and German.
-  7. ONLY if the user explicitly mentions religion, God, faith, praying, or asks for spiritual/religious quotes, include 1 or 2 relevant, comforting verses from the Bible or Quran in ${language}. Otherwise, omit religious quotes.
+  7. ONLY if the user explicitly mentions religion, God, faith, praying, or asks for spiritual/religious quotes, include 1 or 2 relevant, comforting verses from the Bible or Quran in ${fullLanguageName}. Otherwise, omit religious quotes.
   8. Tone: Warm, intimate, and human. Avoid generic or robotic advice. Speak as if you are sitting right next to them.
   
   Return the result as a JSON object with:
   - "needsMoreInfo": boolean
-  - "supportiveMessage": string (your personal message or follow-up question in ${language})
+  - "supportiveMessage": string (your personal message or follow-up question in ${fullLanguageName})
   - "emotion": string (optional, only if needsMoreInfo is false)
-  - "quotes": array of objects with "text" (in ${language}), "translations" (object with keys for each language), and "author" fields (optional, only if needsMoreInfo is false)
+  - "quotes": array of objects with "text" (in ${fullLanguageName}), "translations" (object with keys for each language), and "author" fields (optional, only if needsMoreInfo is false)
   - "religiousQuotes": array of objects with "text" and "author" fields (optional, only if explicitly requested or relevant based on user's spiritual mention)`;
 
   try {
@@ -258,8 +275,11 @@ export async function generateBackgroundImage(quoteText: string, style: string):
       }
     }
     return null;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error generating background image:", error);
+    if (error?.message?.includes("Requested entity was not found")) {
+      throw error;
+    }
     return null;
   }
 }
