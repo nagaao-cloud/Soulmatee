@@ -27,11 +27,13 @@ import {
   Bell,
   LogOut,
   ExternalLink,
+  Lightbulb,
 } from "lucide-react";
 import { CATEGORIES, UI_TRANSLATIONS } from "./constants";
 import { LANGUAGES, Language, Quote, Category, MoodAnalysis } from "./types";
 import {
   generateQuotes,
+  generateQuotesFromIdea,
   analyzeMood,
   generateDailyQuote,
 } from "./services/gemini";
@@ -89,9 +91,55 @@ export default function App() {
   const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'model', parts: { text: string }[] }[]>([]);
   const [dailyQuote, setDailyQuote] = useState<Quote | null>(null);
   const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
   const [view, setView] = useState<
-    "home" | "category" | "mood" | "favorites" | "settings"
+    "home" | "category" | "mood" | "favorites" | "settings" | "idea-generator"
   >("home");
+
+  const IdeaGenerator = () => {
+    const [idea, setIdea] = useState("");
+    const [generatedQuotes, setGeneratedQuotes] = useState<Quote[]>([]);
+    const [ideaLoading, setIdeaLoading] = useState(false);
+
+    const handleGenerate = async () => {
+      if (!idea.trim()) return;
+      if (!checkGenerateLimit()) return;
+      setIdeaLoading(true);
+      const quotes = await generateQuotesFromIdea(idea, currentLang);
+      setGeneratedQuotes(quotes);
+      setIdeaLoading(false);
+    };
+
+    return (
+      <div className="space-y-8">
+        <div className="space-y-4">
+          <textarea
+            value={idea}
+            onChange={(e) => setIdea(e.target.value)}
+            placeholder="Write your idea here..."
+            className="w-full p-6 bg-white/5 border border-white/10 rounded-3xl text-white placeholder:text-white/30 focus:outline-none focus:border-blue-500/50 transition-all"
+            rows={4}
+          />
+          <button
+            onClick={handleGenerate}
+            disabled={ideaLoading || !idea.trim()}
+            className="w-full py-4 bg-blue-500 rounded-2xl font-black uppercase tracking-[0.2em] text-sm shadow-[0_20px_40px_rgba(59,130,246,0.3)] active:scale-95 transition-transform disabled:opacity-50"
+          >
+            {ideaLoading ? "Generating..." : "Generate Quotes"}
+          </button>
+        </div>
+
+        {generatedQuotes.length > 0 && (
+          <div className="space-y-6">
+            <h3 className="text-xl font-bold tracking-tight">Generated Quotes</h3>
+            {generatedQuotes.map((quote, idx) => (
+              <QuoteCard key={quote.id} quote={quote} idx={idx} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
   const [showOnboarding, setShowOnboarding] = useState(() => {
     return !localStorage.getItem("onboarding_completed");
   });
@@ -230,8 +278,6 @@ export default function App() {
 
           new Notification(t("appName"), {
             body: body,
-            icon: "/favicon.ico",
-            badge: "/favicon.ico",
           });
           localStorage.setItem("last_notification_date", today);
         }
@@ -285,6 +331,9 @@ export default function App() {
       await signInWithPopup(auth, provider);
     } catch (error) {
       console.error("Login failed:", error);
+      setToastMessage("Login failed. Please try opening the app in a new tab.");
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
     }
   };
 
@@ -300,21 +349,40 @@ export default function App() {
 
   const toggleNotifications = async () => {
     if (!notificationsEnabled) {
-      if ("Notification" in window) {
-        const permission = await Notification.requestPermission();
-        if (permission === "granted") {
+      try {
+        if ("Notification" in window) {
+          const permission = await Notification.requestPermission();
+          if (permission === "granted") {
+            setNotificationsEnabled(true);
+            localStorage.setItem("notifications_enabled", "true");
+            setToastMessage(t("notificationsEnabledMessage"));
+            setShowToast(true);
+            setTimeout(() => setShowToast(false), 2000);
+            new Notification(t("appName"), {
+              body: t("dailyQuoteNotification"),
+            });
+          } else {
+            // Still toggle it for UI purposes, but warn
+            setNotificationsEnabled(true);
+            localStorage.setItem("notifications_enabled", "true");
+            setToastMessage(t("notificationsDeniedMessage"));
+            setShowToast(true);
+            setTimeout(() => setShowToast(false), 2000);
+          }
+        } else {
           setNotificationsEnabled(true);
           localStorage.setItem("notifications_enabled", "true");
-          alert(t("notificationsEnabledMessage"));
-          new Notification(t("appName"), {
-            body: t("dailyQuoteNotification"),
-            icon: "/favicon.ico",
-          });
-        } else {
-          alert(t("notificationsDeniedMessage"));
+          setToastMessage("Notifications not supported, but enabled in app");
+          setShowToast(true);
+          setTimeout(() => setShowToast(false), 2000);
         }
-      } else {
-        alert("Notifications not supported");
+      } catch (error) {
+        console.error("Notification error:", error);
+        setNotificationsEnabled(true);
+        localStorage.setItem("notifications_enabled", "true");
+        setToastMessage("Enabled in app (browser notifications blocked)");
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 2000);
       }
     } else {
       setNotificationsEnabled(false);
@@ -344,8 +412,32 @@ export default function App() {
     }
   };
 
+  const checkGenerateLimit = () => {
+    if (isPremium) return true;
+    const today = new Date().toDateString();
+    const lastResetDate = localStorage.getItem("generate_reset_date");
+    let usageCount = Number(localStorage.getItem("generate_count") || 0);
+
+    if (lastResetDate !== today) {
+      usageCount = 0;
+      localStorage.setItem("generate_reset_date", today);
+    }
+
+    if (usageCount >= 5) {
+      setToastMessage("Free limit reached: 5 generations per day. Upgrade to Premium for unlimited!");
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+      setShowPremiumModal(true);
+      return false;
+    }
+
+    localStorage.setItem("generate_count", String(usageCount + 1));
+    return true;
+  };
+
   const fetchQuotes = async () => {
     if (!selectedCategory) return;
+    if (!checkGenerateLimit()) return;
     triggerHaptic();
     setLoading(true);
     const newQuotes = await generateQuotes(
@@ -362,11 +454,20 @@ export default function App() {
 
     // Premium check
     if (!isPremium) {
-      const usageCount = Number(
-        localStorage.getItem("mood_analysis_count") || 0,
-      );
-      if (usageCount >= 3) {
-        setShowPremiumModal(true);
+      const today = new Date().toDateString();
+      const lastResetDate = localStorage.getItem("mood_analysis_reset_date");
+      let usageCount = Number(localStorage.getItem("mood_analysis_count") || 0);
+
+      if (lastResetDate !== today) {
+        usageCount = 0;
+        localStorage.setItem("mood_analysis_reset_date", today);
+      }
+
+      if (usageCount >= 20) {
+        setMoodResult({
+          needsMoreInfo: false,
+          supportiveMessage: "I really enjoyed talking with you today ❤️ Let’s continue tomorrow.",
+        });
         return;
       }
       localStorage.setItem("mood_analysis_count", (usageCount + 1).toString());
@@ -405,7 +506,9 @@ export default function App() {
   };
 
   const handleRandomQuote = async () => {
+    if (!checkGenerateLimit()) return;
     triggerHaptic();
+    setQuotes([]);
     setLoading(true);
     const randomCat = CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)];
     setSelectedCategory(randomCat);
@@ -476,7 +579,8 @@ export default function App() {
           text: shareText,
         });
       } catch (err) {
-        if ((err as Error).name !== "AbortError") {
+        console.log("Share error:", err);
+        if ((err as Error).name !== "AbortError" && (err as Error).name !== "NotAllowedError") {
           console.error("Error sharing:", err);
         }
       }
@@ -497,25 +601,25 @@ export default function App() {
       {
         // Calm (Purple → Blue)
         container:
-          "bg-gradient-to-br from-indigo-900/90 via-blue-900/60 to-[#050505] border-indigo-500/30 shadow-[0_20px_80px_rgba(99,102,241,0.15)]",
-        accent: "text-indigo-400",
-        glow: "bg-indigo-500/20",
+          "bg-gradient-to-br from-indigo-950/90 via-blue-950/70 to-black border-indigo-500/20 shadow-2xl",
+        accent: "text-indigo-300",
+        glow: "bg-indigo-500/10",
         patternSvg: `url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%236366f1' fill-opacity='0.05'%3E%3Cpath d='M50 50c0-5.523 4.477-10 10-10s10 4.477 10 10-4.477 10-10 10-10-4.477-10-10zM10 10c0-5.523 4.477-10 10-10s10 4.477 10 10-4.477 10-10 10-10-4.477-10-10z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
       },
       {
         // Warm (Orange → Pink)
         container:
-          "bg-gradient-to-br from-orange-900/90 via-pink-900/60 to-[#050505] border-orange-500/30 shadow-[0_20px_80px_rgba(249,115,22,0.15)]",
-        accent: "text-orange-400",
-        glow: "bg-orange-500/20",
+          "bg-gradient-to-br from-orange-950/90 via-pink-950/70 to-black border-orange-500/20 shadow-2xl",
+        accent: "text-orange-300",
+        glow: "bg-orange-500/10",
         patternSvg: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 86c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zm66-3c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zm-46-45c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1zm26 26c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1zm-1-48c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1zm-54 46c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1zM45 6c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1zm6 51c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1zm-1-2c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1z' fill='%23f97316' fill-opacity='0.05' fill-rule='evenodd'/%3E%3C/svg%3E")`,
       },
       {
         // Deep (Dark Black → Grey)
         container:
-          "bg-gradient-to-br from-zinc-800/90 via-gray-900/60 to-[#050505] border-white/10 shadow-[0_20px_80px_rgba(0,0,0,0.5)]",
-        accent: "text-white/60",
-        glow: "bg-white/10",
+          "bg-gradient-to-br from-zinc-900/90 via-gray-950/70 to-black border-white/10 shadow-2xl",
+        accent: "text-white/50",
+        glow: "bg-white/5",
         patternSvg: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
       },
     ];
@@ -536,21 +640,21 @@ export default function App() {
 
           setActiveQuoteViewer({ quotes: list, index: idx });
         }}
-        className={`p-12 ${style.container} border rounded-[3.5rem] space-y-12 relative group overflow-hidden cursor-pointer`}
+        className={`${style.container} p-8 md:p-12 lg:p-16 border rounded-3xl md:rounded-[3rem] space-y-8 relative group overflow-hidden cursor-pointer hover:border-white/20 transition-all duration-300 active:scale-[0.98]`}
       >
         {/* Dynamic Glow Orb */}
         <div
-          className={`absolute -top-32 -right-32 w-80 h-80 ${style.glow} blur-[120px] rounded-full pointer-events-none group-hover:scale-150 transition-transform duration-[2s]`}
+          className={`absolute -top-32 -right-32 w-80 h-80 ${style.glow} blur-[100px] rounded-full pointer-events-none group-hover:scale-125 transition-transform duration-700`}
         />
 
         {/* Abstract Pattern Overlay */}
         <div
-          className="absolute inset-0 pointer-events-none mix-blend-overlay"
+          className="absolute inset-0 pointer-events-none mix-blend-overlay opacity-30"
           style={{ backgroundImage: style.patternSvg }}
         />
 
         {/* Nature Background (Subtle & Atmospheric) */}
-        <div className="absolute inset-0 opacity-[0.08] pointer-events-none mix-blend-soft-light group-hover:scale-110 transition-transform duration-[10s] ease-out">
+        <div className="absolute inset-0 opacity-[0.05] pointer-events-none mix-blend-soft-light group-hover:scale-105 transition-transform duration-[10s] ease-out">
           <img
             src={`https://picsum.photos/seed/${quote.id}-nature/1200/800?grayscale&blur=5`}
             alt=""
@@ -572,10 +676,19 @@ export default function App() {
               }}
               className="group/text relative active:scale-[0.99] transition-transform w-full"
             >
-              <p className="text-3xl sm:text-4xl md:text-5xl font-serif font-semibold leading-snug text-white tracking-tight text-glow drop-shadow-[0_4px_16px_rgba(0,0,0,1)]">
+              <p className={`${
+                quote.text.length < 50
+                  ? "text-4xl md:text-5xl lg:text-6xl"
+                  : quote.text.length < 100
+                  ? "text-3xl md:text-4xl lg:text-5xl"
+                  : "text-2xl md:text-3xl lg:text-4xl"
+              } font-serif font-medium leading-relaxed text-white tracking-tight drop-shadow-lg`}>
                 "{quote.text}"
               </p>
-              <div className="mt-6 opacity-0 group-hover/text:opacity-40 transition-opacity flex justify-center">
+              <div className="text-sm md:text-base font-medium text-white/40 italic">
+                — {quote.author}
+              </div>
+              <div className="mt-4 opacity-0 group-hover/text:opacity-60 transition-opacity flex justify-center">
                 <Copy className="w-4 h-4 text-white" />
               </div>
             </button>
@@ -800,7 +913,7 @@ export default function App() {
             className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] bg-orange-500 text-white px-8 py-4 rounded-full shadow-[0_10px_40px_rgba(249,115,22,0.3)] flex items-center gap-3"
           >
             <CheckCircle2 className="w-5 h-5" />
-            <span className="font-bold tracking-tight">{t("copied")}</span>
+            <span className="font-bold tracking-tight">{toastMessage || t("copied")}</span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -934,7 +1047,7 @@ export default function App() {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 10 }}
-                  className={`absolute ${langConfig.dir === "rtl" ? "left-0" : "right-0"} mt-2 w-56 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50`}
+                  className={`absolute ${langConfig.dir === "rtl" ? "left-0" : "right-0"} mt-2 w-56 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl overflow-y-auto max-h-[60vh] z-50 custom-scrollbar`}
                 >
                   <div className="p-2 border-b border-white/5">
                     <button
@@ -992,8 +1105,42 @@ export default function App() {
       </header>
 
       <main className="max-w-2xl mx-auto p-6 pb-24">
+        {view === "idea-generator" && (
+          <div className="space-y-6">
+            <IdeaGenerator />
+          </div>
+        )}
         {view === "home" && (
           <div className="space-y-10">
+            {/* Idea Generator */}
+            <section className="space-y-6">
+              <motion.button
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                onClick={() => setView("idea-generator")}
+                className="w-full p-8 bg-gradient-to-br from-blue-500/10 to-indigo-500/10 backdrop-blur-xl border border-white/10 rounded-[3rem] text-left relative overflow-hidden group hover:border-blue-500/30 transition-all shadow-2xl"
+              >
+                <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform">
+                  <Lightbulb className="w-24 h-24 text-blue-500" />
+                </div>
+                <div className="relative z-10 space-y-3">
+                  <div className="flex items-center gap-3 text-blue-500">
+                    <Lightbulb className="w-5 h-5" />
+                    <span className="text-[10px] font-black uppercase tracking-[0.4em]">
+                      Idea Generator
+                    </span>
+                  </div>
+                  <h3 className="text-2xl font-black tracking-tight">
+                    Turn your ideas into wisdom
+                  </h3>
+                  <p className="text-white/40 text-sm font-medium">
+                    Write down your idea, and I'll create quotes for you.
+                  </p>
+                </div>
+              </motion.button>
+            </section>
+
             {/* Soul Insight Entry */}
             <section className="space-y-6">
               <motion.button
@@ -1065,6 +1212,7 @@ export default function App() {
                       whileHover={{ scale: 1.03, y: -8 }}
                       whileTap={{ scale: 0.97 }}
                       onClick={() => {
+                        setQuotes([]);
                         setSelectedCategory(cat);
                         setView("category");
                       }}
@@ -1223,6 +1371,26 @@ export default function App() {
                       {t("analyzing")}
                     </span>
                   </div>
+                </motion.div>
+              )}
+
+              {moodResult && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-6 bg-white/5 rounded-3xl backdrop-blur-md border border-white/10"
+                >
+                  <p className="text-lg text-white/90 leading-relaxed font-medium">
+                    {moodResult.supportiveMessage}
+                  </p>
+                  {!isPremium && (
+                    <button
+                      onClick={() => setShowPremiumModal(true)}
+                      className="mt-4 text-orange-500 text-sm font-bold hover:text-orange-400 transition-colors"
+                    >
+                      Want to keep talking without limits?
+                    </button>
+                  )}
                 </motion.div>
               )}
 
@@ -1425,11 +1593,18 @@ export default function App() {
                 <button
                   onClick={async () => {
                     if (navigator.share) {
-                      await navigator.share({
-                        title: t("appName"),
-                        text: `Check out FeelSync - Daily Inspiration & Soul Insight!`,
-                        url: window.location.href,
-                      });
+                      try {
+                        await navigator.share({
+                          title: t("appName"),
+                          text: `Check out FeelSync - Daily Inspiration & Soul Insight!`,
+                          url: window.location.href,
+                        });
+                      } catch (err) {
+                        console.log("Share error:", err);
+                        if ((err as Error).name !== "AbortError" && (err as Error).name !== "NotAllowedError") {
+                          console.error("Error sharing:", err);
+                        }
+                      }
                     }
                   }}
                   className="w-full p-6 flex items-center justify-between hover:bg-white/5 transition-colors"

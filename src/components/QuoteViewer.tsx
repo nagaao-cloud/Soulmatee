@@ -23,9 +23,9 @@ interface QuoteViewerProps {
   onShare: (quote: Quote) => void;
 }
 
-const swipeConfidenceThreshold = 10000;
+const swipeConfidenceThreshold = 2000;
 const swipePower = (offset: number, velocity: number) => {
-  return Math.abs(offset) * velocity;
+  return offset * velocity;
 };
 
 export default function QuoteViewer({
@@ -142,6 +142,7 @@ export default function QuoteViewer({
               drag="x"
               dragConstraints={{ left: 0, right: 0 }}
               dragElastic={1}
+              whileDrag={{ scale: 0.95, opacity: 0.8 }}
               onDragEnd={(e, { offset, velocity }) => {
                 const swipe = swipePower(offset.x, velocity.x);
                 if (swipe < -swipeConfidenceThreshold) {

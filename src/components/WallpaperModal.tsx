@@ -238,7 +238,10 @@ export default function WallpaperModal({ quote, language, onClose, isPremium, on
         link.click();
       }
     } catch (err) {
-      console.error('Failed to share:', err);
+      console.log("Share error:", err);
+      if ((err as Error).name !== "AbortError" && (err as Error).name !== "NotAllowedError") {
+        console.error('Failed to share:', err);
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -255,6 +258,11 @@ export default function WallpaperModal({ quote, language, onClose, isPremium, on
       onUpgrade();
       return;
     }
+
+    if (!(await (window as any).aistudio.hasSelectedApiKey())) {
+      await (window as any).aistudio.openSelectKey();
+    }
+
     setIsGeneratingAI(true);
     setCurrentGeneratingStyle(style);
     try {
@@ -504,7 +512,9 @@ export default function WallpaperModal({ quote, language, onClose, isPremium, on
                     className={`flex-shrink-0 flex items-center gap-3 px-6 py-4 rounded-2xl border transition-all active:scale-95 relative ${
                       isGeneratingAI && currentGeneratingStyle === aiStyle
                         ? 'bg-orange-500/20 border-orange-500/50 text-orange-400'
-                        : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10'
+                        : isLocked
+                          ? 'bg-white/5 border-white/5 text-white/20 hover:bg-white/5'
+                          : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10'
                     }`}
                   >
                     {isGeneratingAI && currentGeneratingStyle === aiStyle ? (
@@ -516,8 +526,9 @@ export default function WallpaperModal({ quote, language, onClose, isPremium, on
                       {isGeneratingAI && currentGeneratingStyle === aiStyle ? t('generating') : t(`style${aiStyle.charAt(0).toUpperCase() + aiStyle.slice(1)}`) || aiStyle}
                     </span>
                     {isLocked && (
-                      <div className="absolute -top-2 -right-2 w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center shadow-lg border-2 border-[#111]">
+                      <div className="absolute -top-2 -right-2 flex items-center gap-1 bg-orange-500 px-2 py-0.5 rounded-full shadow-lg border-2 border-[#111]">
                         <Lock className="w-3 h-3 text-white" />
+                        <span className="text-[8px] font-black text-white uppercase">Premium</span>
                       </div>
                     )}
                   </button>
@@ -564,7 +575,10 @@ export default function WallpaperModal({ quote, language, onClose, isPremium, on
                       selectedImage === img ? 'border-white scale-110 shadow-2xl' : 'border-transparent opacity-40'
                     }`}
                   >
+                  <div className="relative w-full h-full">
                     <img src={img} alt="" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 200 200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'noiseFilter\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.65\' numOctaves=\'3\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23noiseFilter)\'/%3E%3C/svg%3E")' }}></div>
+                  </div>
                   </button>
                 ))}
               </motion.div>

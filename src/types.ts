@@ -22,6 +22,7 @@ export interface Category {
 export interface Quote {
   id: string;
   text: string;
+  translations?: Record<Language, string>;
   author: string;
   category: string;
   language: Language;
