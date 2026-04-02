@@ -11,6 +11,8 @@ interface WallpaperModalProps {
   language: Language;
   onClose: () => void;
   isPremium: boolean;
+  isLoggedIn: boolean;
+  onRequireLogin: () => void;
   onUpgrade: () => void;
 }
 
@@ -133,7 +135,7 @@ const colorVariations = [
   'from-amber-950 via-orange-950 to-[#050505]',
 ];
 
-export default function WallpaperModal({ quote, language, onClose, isPremium, onUpgrade }: WallpaperModalProps) {
+export default function WallpaperModal({ quote, language, onClose, isPremium, isLoggedIn, onRequireLogin, onUpgrade }: WallpaperModalProps) {
   const wallpaperRef = useRef<HTMLDivElement>(null);
   const [selectedStyle, setSelectedStyle] = useState<WallpaperStyle>('minimal');
   const [selectedFont, setSelectedFont] = useState(FONTS[0].id);
@@ -155,6 +157,10 @@ export default function WallpaperModal({ quote, language, onClose, isPremium, on
   const currentFont = useMemo(() => FONTS.find(f => f.id === selectedFont)!, [selectedFont]);
 
   const handleDownload = async () => {
+    if (!isLoggedIn) {
+      onRequireLogin();
+      return;
+    }
     if (!wallpaperRef.current) return;
     
     setIsGenerating(true);

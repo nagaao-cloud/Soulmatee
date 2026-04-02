@@ -447,10 +447,6 @@ export default function App() {
   };
 
   const checkGenerateLimit = () => {
-    if (!user) {
-      setShowLoginModal(true);
-      return false;
-    }
     if (isPremium) return true;
     const today = new Date().toDateString();
     const lastResetDate = localStorage.getItem("generate_reset_date");
@@ -503,11 +499,6 @@ export default function App() {
 
   const handleAnalyzeMood = async () => {
     if (!moodInput.trim()) return;
-
-    if (!user) {
-      setShowLoginModal(true);
-      return;
-    }
 
     // Premium check
     if (!isPremium) {
@@ -582,10 +573,6 @@ export default function App() {
   };
 
   const toggleFavorite = async (quote: Quote) => {
-    if (!user) {
-      setShowLoginModal(true);
-      return;
-    }
     triggerHaptic();
     const isFav = favorites.some((f) => f.id === quote.id);
     const newFavs = isFav
@@ -1867,6 +1854,8 @@ export default function App() {
             quote={wallpaperQuote}
             language={currentLang}
             isPremium={isPremium}
+            isLoggedIn={!!user}
+            onRequireLogin={() => setShowLoginModal(true)}
             onUpgrade={() => setShowPremiumModal(true)}
             onClose={() => setWallpaperQuote(null)}
           />
