@@ -1,6 +1,6 @@
 import React, { useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Smartphone, Lock, Loader2, CheckCircle2, Palette, Leaf, Compass as SoulIcon, Crown, Type as TypeIcon, RefreshCw, AlignLeft, AlignCenter, AlignRight, ChevronUp, ChevronDown, Eye, Copy, Share2, Sparkles } from 'lucide-react';
+import { X, Smartphone, Lock, Loader2, CheckCircle2, Palette, Leaf, Compass as SoulIcon, Crown, Type as TypeIcon, RefreshCw, AlignLeft, AlignCenter, AlignRight, ChevronUp, ChevronDown, Eye, Copy, Share2, Sparkles, Download } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { Quote, Language } from '../types';
 import { UI_TRANSLATIONS } from '../constants';
@@ -154,37 +154,26 @@ export default function WallpaperModal({ quote, language, onClose, isPremium, on
   const currentStyle = useMemo(() => STYLES.find(s => s.id === selectedStyle)!, [selectedStyle]);
   const currentFont = useMemo(() => FONTS.find(f => f.id === selectedFont)!, [selectedFont]);
 
-  const handleDownload = async (type: 'home' | 'lock') => {
+  const handleDownload = async () => {
     if (!wallpaperRef.current) return;
     
     setIsGenerating(true);
-    const originalPadding = wallpaperRef.current.style.padding;
+    const node = wallpaperRef.current;
     
     try {
-      // Adjust padding and position to simulate cropping/optimal layout for Home vs Lock screen
-      // Home screen: More padding at bottom to avoid icon obstruction
-      // Lock screen: More padding at top for clock
-      const originalJustify = wallpaperRef.current.style.justifyContent;
-      
-      if (type === 'home') {
-        wallpaperRef.current.style.padding = '80px 40px 160px 40px';
-        // For home screen, center or top is usually better
-      } else {
-        wallpaperRef.current.style.padding = '240px 40px 80px 40px';
-        // For lock screen, bottom or center is usually better to avoid clock
-      }
+      const width = node.offsetWidth;
+      // Calculate scale to make the final image 1080px wide
+      const scale = 1080 / width;
 
       // Ensure images are loaded before capturing
-      const images = Array.from(wallpaperRef.current.getElementsByTagName('img')) as HTMLImageElement[];
+      const images = Array.from(node.getElementsByTagName('img')) as HTMLImageElement[];
       await Promise.all(images.map(img => {
         if (img.complete) return Promise.resolve();
         return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; });
       }));
 
-      const dataUrl = await toPng(wallpaperRef.current, {
-        width: 1080,
-        height: 1920,
-        pixelRatio: 2,
+      const dataUrl = await toPng(node, {
+        pixelRatio: scale,
         style: {
           transform: 'scale(1)',
           borderRadius: '0',
@@ -192,7 +181,7 @@ export default function WallpaperModal({ quote, language, onClose, isPremium, on
       });
       
       const link = document.createElement('a');
-      link.download = `feelsync-${selectedStyle}-${type}-${Date.now()}.png`;
+      link.download = `feelsync-${selectedStyle}-${Date.now()}.png`;
       link.href = dataUrl;
       link.click();
       
@@ -200,11 +189,10 @@ export default function WallpaperModal({ quote, language, onClose, isPremium, on
       setTimeout(() => {
         setShowSuccess(false);
         onClose();
-      }, 2000);
+      }, 3500);
     } catch (err) {
       console.error('Failed to generate wallpaper:', err);
     } finally {
-      wallpaperRef.current.style.padding = originalPadding;
       setIsGenerating(false);
     }
   };
@@ -213,11 +201,18 @@ export default function WallpaperModal({ quote, language, onClose, isPremium, on
     if (!wallpaperRef.current) return;
     
     setIsGenerating(true);
+    const node = wallpaperRef.current;
+    
     try {
-      const dataUrl = await toPng(wallpaperRef.current, {
-        width: 1080,
-        height: 1920,
-        pixelRatio: 2,
+      const width = node.offsetWidth;
+      const scale = 1080 / width;
+
+      const dataUrl = await toPng(node, {
+        pixelRatio: scale,
+        style: {
+          transform: 'scale(1)',
+          borderRadius: '0',
+        }
       });
       
       const response = await fetch(dataUrl);
@@ -278,7 +273,12 @@ export default function WallpaperModal({ quote, language, onClose, isPremium, on
       }
     } catch (error: any) {
       console.error("Failed to generate AI background", error);
-      if (error?.message?.includes("Requested entity was not found")) {
+      if (
+        error?.message?.includes("Requested entity was not found") ||
+        error?.message?.includes("The caller does not have permission") ||
+        error?.status === "PERMISSION_DENIED" ||
+        error?.status === 403
+      ) {
         try {
           await (window as any).aistudio?.openSelectKey?.();
         } catch (e) {
@@ -617,23 +617,14 @@ export default function WallpaperModal({ quote, language, onClose, isPremium, on
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-6 px-4">
+        <div className="grid grid-cols-1 gap-4 px-4">
           <button
-            onClick={() => handleDownload('home')}
+            onClick={handleDownload}
             disabled={isGenerating}
-            className="flex flex-col items-center justify-center gap-4 p-8 bg-white/5 backdrop-blur-xl border border-white/10 rounded-[2.5rem] hover:bg-white/10 transition-all group disabled:opacity-30 active:scale-95 shadow-lg"
+            className="flex items-center justify-center gap-4 py-6 bg-white/5 backdrop-blur-xl border border-white/10 rounded-[2rem] hover:bg-white/10 transition-all group active:scale-95 shadow-lg"
           >
-            <Smartphone className="w-6 h-6 text-orange-500" />
-            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40 group-hover:text-white">{t('homeScreen')}</span>
-          </button>
-
-          <button
-            onClick={() => handleDownload('lock')}
-            disabled={isGenerating}
-            className="flex flex-col items-center justify-center gap-4 p-8 bg-white/5 backdrop-blur-xl border border-white/10 rounded-[2.5rem] hover:bg-white/10 transition-all group disabled:opacity-30 active:scale-95 shadow-lg"
-          >
-            <Lock className="w-6 h-6 text-orange-500" />
-            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40 group-hover:text-white">{t('lockScreen')}</span>
+            <Download className="w-5 h-5 text-orange-500" />
+            <span className="text-xs font-black uppercase tracking-[0.3em] text-white/60 group-hover:text-white">Download Image</span>
           </button>
         </div>
       </div>
@@ -684,6 +675,9 @@ export default function WallpaperModal({ quote, language, onClose, isPremium, on
               <CheckCircle2 className="w-16 h-16 text-white" />
             </motion.div>
             <p className="text-3xl font-black tracking-tighter text-white text-glow">{t('wallpaperSaved')}</p>
+            <p className="text-sm text-white/60 text-center max-w-[250px]">
+              Image saved to your device. Open your Photos app to set it as your wallpaper.
+            </p>
           </motion.div>
         )}
       </AnimatePresence>

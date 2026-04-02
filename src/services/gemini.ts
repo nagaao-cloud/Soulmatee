@@ -33,9 +33,9 @@ const languageNames: Record<Language, string> = {
   zu: "Zulu",
 };
 
-export async function generateQuotes(category: string, language: Language, count: number = 10): Promise<Quote[]> {
+export async function generateQuotes(category: string, language: Language, count: number = 2): Promise<Quote[]> {
   const ai = getAiInstance();
-  const model = "gemini-3-flash-preview";
+  const model = "gemini-3.1-flash-lite-preview";
   const fullLanguageName = languageNames[language] || language;
   
   const prompt = `You are a wise, empathetic close friend. Generate ${count} unique, deep, and profoundly human quotes for the category "${category}" in the ${fullLanguageName} language. 
@@ -82,9 +82,9 @@ export async function generateQuotes(category: string, language: Language, count
   }
 }
 
-export async function generateQuotesFromIdea(idea: string, language: Language, count: number = 5): Promise<Quote[]> {
+export async function generateQuotesFromIdea(idea: string, language: Language, count: number = 2): Promise<Quote[]> {
   const ai = getAiInstance();
-  const model = "gemini-3-flash-preview";
+  const model = "gemini-3.1-flash-lite-preview";
   const fullLanguageName = languageNames[language] || language;
 
   const prompt = `You are a wise, empathetic close friend. Generate ${count} unique, deep, and profoundly human quotes based on the following idea: "${idea}".
@@ -133,7 +133,7 @@ export async function generateQuotesFromIdea(idea: string, language: Language, c
 
 export async function analyzeMood(history: { role: 'user' | 'model', parts: { text: string }[] }[], language: Language): Promise<MoodAnalysis | null> {
   const ai = getAiInstance();
-  const model = "gemini-3-flash-preview";
+  const model = "gemini-3.1-flash-lite-preview";
   const fullLanguageName = languageNames[language] || language;
   
   const prompt = `You are a deeply empathetic, caring close friend and spiritual guide listening to a loved one. Analyze the following conversation history.
@@ -277,7 +277,12 @@ export async function generateBackgroundImage(quoteText: string, style: string):
     return null;
   } catch (error: any) {
     console.error("Error generating background image:", error);
-    if (error?.message?.includes("Requested entity was not found")) {
+    if (
+      error?.message?.includes("Requested entity was not found") ||
+      error?.message?.includes("The caller does not have permission") ||
+      error?.status === "PERMISSION_DENIED" ||
+      error?.status === 403
+    ) {
       throw error;
     }
     return null;

@@ -16,7 +16,6 @@ import {
   Languages,
   Loader2,
   RefreshCw,
-  Compass as SoulIcon,
   Search,
   CheckCircle2,
   TrendingUp,
@@ -41,6 +40,7 @@ import {
 import WallpaperModal from "./components/WallpaperModal";
 import QuoteViewer from "./components/QuoteViewer";
 import LegalModal from "./components/LegalModal";
+import Logo from "./components/Logo";
 import { auth, db } from "./firebase";
 import {
   signInWithPopup,
@@ -65,7 +65,7 @@ const iconMap: Record<string, any> = {
   CloudRain,
   Zap,
   Trophy,
-  Compass: SoulIcon,
+  Compass,
   Users,
   BookOpen,
   Moon,
@@ -164,6 +164,7 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(() => {
     return !localStorage.getItem("onboarding_completed");
   });
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [showTermsOfService, setShowTermsOfService] = useState(false);
@@ -191,6 +192,10 @@ export default function App() {
   };
 
   const upgradeToPremium = () => {
+    if (!user) {
+      setShowLoginModal(true);
+      return;
+    }
     // Simulate payment
     localStorage.setItem("is_premium", "true");
     setIsPremium(true);
@@ -373,6 +378,10 @@ export default function App() {
   };
 
   const toggleNotifications = async () => {
+    if (!user) {
+      setShowLoginModal(true);
+      return;
+    }
     if (!notificationsEnabled) {
       try {
         if ("Notification" in window) {
@@ -438,6 +447,10 @@ export default function App() {
   };
 
   const checkGenerateLimit = () => {
+    if (!user) {
+      setShowLoginModal(true);
+      return false;
+    }
     if (isPremium) return true;
     const today = new Date().toDateString();
     const lastResetDate = localStorage.getItem("generate_reset_date");
@@ -468,7 +481,7 @@ export default function App() {
     const newQuotes = await generateQuotes(
       selectedCategory.id,
       currentLang,
-      10,
+      2,
     );
     setQuotes(newQuotes);
     setLoading(false);
@@ -482,7 +495,7 @@ export default function App() {
     const newQuotes = await generateQuotes(
       selectedCategory.id,
       currentLang,
-      5,
+      2,
     );
     setQuotes((prev) => [...prev, ...newQuotes]);
     setLoadingMore(false);
@@ -490,6 +503,11 @@ export default function App() {
 
   const handleAnalyzeMood = async () => {
     if (!moodInput.trim()) return;
+
+    if (!user) {
+      setShowLoginModal(true);
+      return;
+    }
 
     // Premium check
     if (!isPremium) {
@@ -564,6 +582,10 @@ export default function App() {
   };
 
   const toggleFavorite = async (quote: Quote) => {
+    if (!user) {
+      setShowLoginModal(true);
+      return;
+    }
     triggerHaptic();
     const isFav = favorites.some((f) => f.id === quote.id);
     const newFavs = isFav
@@ -705,8 +727,8 @@ export default function App() {
         {/* Content */}
         <div className="relative z-10 flex flex-col items-center text-center space-y-12">
           <div className="space-y-8 w-full">
-            <SoulIcon
-              className={`w-8 h-8 ${style.accent} opacity-30 mx-auto`}
+            <Logo
+              className={`w-12 h-12 ${style.accent} opacity-30 mx-auto`}
             />
             <button
               onClick={(e) => {
@@ -814,7 +836,7 @@ export default function App() {
       {
         title: t("onboardingTitle1"),
         sub: t("onboardingSub1"),
-        icon: <SoulIcon className="w-16 h-16 text-orange-500" />,
+        icon: <Logo className="w-16 h-16" />,
         color: "from-orange-500/20 to-transparent",
       },
       {
@@ -957,6 +979,55 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Login Modal */}
+      <AnimatePresence>
+        {showLoginModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="w-full max-w-md bg-[#111] border border-white/10 rounded-[3rem] overflow-hidden shadow-2xl relative"
+            >
+              <button
+                onClick={() => setShowLoginModal(false)}
+                className="absolute top-6 right-6 p-2 hover:bg-white/5 rounded-full text-white/40"
+              >
+                <ChevronLeft className="w-6 h-6 rotate-90" />
+              </button>
+
+              <div className="p-10 space-y-8">
+                <div className="text-center space-y-4">
+                  <div className="w-20 h-20 bg-orange-500/10 rounded-3xl flex items-center justify-center text-orange-500 mx-auto">
+                    <Users className="w-10 h-10" />
+                  </div>
+                  <h2 className="text-3xl font-black tracking-tight">
+                    Sign In Required
+                  </h2>
+                  <p className="text-white/40 font-medium">
+                    Please sign in to access this feature and save your progress.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setShowLoginModal(false);
+                    handleLogin();
+                  }}
+                  className="w-full py-5 bg-gradient-to-r from-orange-500 to-orange-600 rounded-2xl font-bold tracking-wide shadow-lg hover:shadow-orange-500/25 active:scale-95 transition-all"
+                >
+                  Sign in with Google
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Premium Modal */}
       <AnimatePresence>
         {showPremiumModal && (
@@ -981,7 +1052,7 @@ export default function App() {
               <div className="p-10 space-y-8">
                 <div className="text-center space-y-4">
                   <div className="w-20 h-20 bg-orange-500/10 rounded-3xl flex items-center justify-center text-orange-500 mx-auto">
-                    <SoulIcon className="w-10 h-10" />
+                    <Logo className="w-12 h-12" />
                   </div>
                   <h2 className="text-3xl font-black tracking-tight">
                     {t("premiumTitle")}
@@ -1207,7 +1278,7 @@ export default function App() {
                 </div>
                 <div className="relative z-10 space-y-3">
                   <div className="flex items-center gap-3 text-orange-500">
-                    <SoulIcon className="w-5 h-5" />
+                    <Logo className="w-6 h-6" />
                     <span className="text-[10px] font-black uppercase tracking-[0.4em]">
                       {t("soulInsight")}
                     </span>
@@ -1386,7 +1457,7 @@ export default function App() {
             <div className="flex-1 overflow-y-auto space-y-6 px-2 pb-32 scrollbar-hide">
               {chatHistory.length === 0 && !analyzingMood && (
                 <div className="text-center py-20 space-y-6 opacity-50">
-                  <SoulIcon className="w-16 h-16 mx-auto text-white/20" />
+                  <Logo className="w-16 h-16 mx-auto opacity-20 grayscale" />
                   <p className="text-white/40 font-medium text-sm">
                     How are you feeling today? I'm here to listen.
                   </p>
@@ -1576,7 +1647,7 @@ export default function App() {
                 className="w-full p-8 bg-gradient-to-br from-orange-500 to-orange-600 rounded-[2.5rem] text-left relative overflow-hidden group shadow-2xl active:scale-95 transition-transform"
               >
                 <div className="absolute top-0 right-0 p-8 opacity-20 group-hover:scale-110 transition-transform">
-                  <SoulIcon className="w-24 h-24" />
+                  <Logo className="w-24 h-24" />
                 </div>
                 <div className="relative z-10 space-y-2">
                   <h3 className="text-2xl font-black tracking-tight">
